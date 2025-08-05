@@ -1,10 +1,9 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "esnext",
     "target": "esnext",
     "moduleResolution": "node",
-    "moduleDetection": "force",
     "outDir": "dist",
     "rootDir": "src",
     "noEmit": false,
@@ -17,9 +16,7 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "allowJs": true,
-    "types": [
-      "bun-types" // add Bun global
-    ]
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "tests", "sandbox"]

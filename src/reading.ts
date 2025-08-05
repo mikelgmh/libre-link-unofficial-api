@@ -35,7 +35,7 @@ export class GlucoseReading {
      * @description The trend of the glucose reading. See {@link Trend}.
      */
     public trend: Trend;
-  
+
     constructor(public _raw: RawGlucoseReading, public _options: { targetHigh: number, targetLow: number } = DEFAULT_OPTIONS) {
         const parsed = parseGlucoseReading(_raw, _options);
 
@@ -62,7 +62,7 @@ export class GlucoseReading {
     }
 
     /**
-     * @description The type of the trend. {@see TrendType}
+     * @description The type of the trend. { @see TrendType }
      */
     get trendType(): TrendType {
         return TREND_TYPE_MAP[this.trend];

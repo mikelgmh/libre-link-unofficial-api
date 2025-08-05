@@ -30,10 +30,13 @@ Then, you can import the `LibreLinkClient` from the library:
 import { LibreLinkClient } from 'libre-link-unofficial-api';
 ```
 
-You'll need to provide an email and password for your [Libre Link Up](https://librelinkup.com/) account either in the .env file or when creating a new `LibreLinkClient` instance:
+You'll need to provide an email and password for your [Libre Link Up](https://librelinkup.com/) account when creating a new `LibreLinkClient` instance:
 
 ```js
-const client = new LibreLinkClient({ email: 'your-libre-link-up-email', password: 'your-libre-link-up-password' });
+const client = new LibreLinkClient({ 
+    email: 'your-libre-link-up-email', 
+    password: 'your-libre-link-up-password' 
+});
 ```
 
 Please make sure that the email and password work with the [Libre Link Up](https://librelinkup.com/) mobile application before using them with this library.
@@ -41,13 +44,16 @@ Please make sure that the email and password work with the [Libre Link Up](https
 ## 📚 API
 
 ### Options
+
 The `LibreLinkClient` constructor accepts the following options:
 
 Option | Description | Default
 --- | --- | ---
-`email` | The email address for your Libre Link Up account. Will fallback to env variables, if not provided. | `undefined`
-`password` | The password for your Libre Link Up account. Will fallback to env variables, if not provided. | `undefined`
-`patientId` | The patient ID for the user. Will fallback to env variables, if not provided. | `undefined`
+`email` | The email address for your Libre Link Up account. **Required.** | `undefined`
+`password` | The password for your Libre Link Up account. **Required.** | `undefined`
+`apiUrl` | The base URL for the Libre Link Up API. | `"https://api-us.libreview.io"`
+`patientId` | The patient ID for the user. | `undefined`
+`lluVersion` | The version of the Libre Link Up app to emulate. | `"4.7.0"`
 `cache` | Whether to enable cache for request responses received from Libre Link Up api. Data like blood glucose readings will never be cached. | `true`
 
 ### Methods
@@ -75,10 +81,9 @@ import { LibreLinkClient } from 'libre-link-unofficial-api';
 const client = new LibreLinkClient({ email: 'your-libre-link-up-email', password: 'your-libre-link-up-password' });
 ```
 
-#### Custom Libre Link Up Version or Patient ID.
+#### Custom Libre Link Up Version or Patient ID
 
 The llu version and patient ID can be passed directly to the LibreLinkClient.
-Useful in cases when the default values from the env variables are not sufficient.
 
 ```js
 import { LibreLinkClient } from 'libre-link-unofficial-api';
@@ -86,8 +91,8 @@ import { LibreLinkClient } from 'libre-link-unofficial-api';
 const client = new LibreLinkClient({ 
     email: 'your-libre-link-up-email', 
     password: 'your-libre-link-up-password',
-    lluVersion: '4.12.0', // Default derives from the environment variables.
-    patientId: '2b2b2b2b-2b2b-2b2b-2b2b-2b2b2b2b2b2b' // Default derives from the environment variables.
+    lluVersion: '4.12.0', // Default is "4.7.0"
+    patientId: '2b2b2b2b-2b2b-2b2b-2b2b-2b2b2b2b2b2b' // Optional, allows selecting a specific patient
 });
 ```
 

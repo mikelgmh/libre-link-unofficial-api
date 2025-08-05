@@ -22,9 +22,10 @@
     "prepublish": "bun run build"
   },
   "devDependencies": {
+    "@types/node": "^24.2.0",
+    "bun-bagel": "^1.2.0",
     "bun-types": "latest",
-    "rimraf": "latest",
-    "bun-bagel": "^1.0.8"
+    "rimraf": "latest"
   },
   "peerDependencies": {
     "typescript": "latest"

@@ -3,7 +3,11 @@ import { LibreLinkClient } from '../src';
 import { mapObjectPropertiesToTypes } from "./utils";
 
 describe('Libre Link Up API Integrity', () => {
-  const client: LibreLinkClient = new LibreLinkClient();
+  const client: LibreLinkClient = new LibreLinkClient({
+    email: process.env.LIBRE_LINK_EMAIL!,
+    password: process.env.LIBRE_LINK_PASSWORD!,
+    patientId: process.env.LIBRE_LINK_PATIENT_ID
+  });
 
   // Wait for a couple of seconds between tests to avoid 429 too many requests errors.
   beforeEach(() => new Promise((resolve) => setTimeout(resolve, 5000)));
@@ -42,7 +46,7 @@ describe('Libre Link Up API Integrity', () => {
     const glucoseReadings = await client.logbook();
 
     expect(glucoseReadings).toBeTruthy();
-    if(glucoseReadings.length > 0) {
+    if (glucoseReadings.length > 0) {
       expect(glucoseReadings[0]).toBeTruthy();
       expect(typeof glucoseReadings[0].value).toBe("number");
       expect(glucoseReadings[0].timestamp instanceof Date).toBe(true);
@@ -51,7 +55,11 @@ describe('Libre Link Up API Integrity', () => {
 
   // TODO: Fix the test.
   // test('should initialize with a patientId', async () => {
-  //   const customClient = new LibreLinkClient({ patientId: "7f51ab27-c7c8-11ed-bcc3-0242ac110002" });
+  //   const customClient = new LibreLinkClient({ 
+  //     email: process.env.LIBRE_LINK_EMAIL!,
+  //     password: process.env.LIBRE_LINK_PASSWORD!,
+  //     patientId: "7f51ab27-c7c8-11ed-bcc3-0242ac110002" 
+  //   });
 
   //   await customClient.login();
 
@@ -59,7 +67,11 @@ describe('Libre Link Up API Integrity', () => {
   // });
 
   // test('should throw error with an invalid patientId', async () => {
-  //   const customClient = new LibreLinkClient({ patientId: "invalid-patient-id" });
+  //   const customClient = new LibreLinkClient({ 
+  //     email: process.env.LIBRE_LINK_EMAIL!,
+  //     password: process.env.LIBRE_LINK_PASSWORD!,
+  //     patientId: "invalid-patient-id" 
+  //   });
 
   //   try {
   //     await customClient.login();

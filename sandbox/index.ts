@@ -2,7 +2,11 @@ import { LibreLinkClient } from "../src";
 import { mock, clearMocks } from "bun-bagel";
 
 // Create a new LibreLinkClient instance.
-const client = new LibreLinkClient();
+const client = new LibreLinkClient({
+  email: process.env.LIBRE_LINK_EMAIL!,
+  password: process.env.LIBRE_LINK_PASSWORD!,
+  patientId: process.env.LIBRE_LINK_PATIENT_ID
+});
 
 const login = async () => {
   console.log("\n\nLog into the account =>\n");

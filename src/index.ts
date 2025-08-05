@@ -1,2 +1,2 @@
-export { LibreLinkClient } from "./client";
+export { LibreLinkClient, LibreLinkClientOptions } from "./client";
 export { GlucoseReading } from './reading';
