@@ -1,13 +1,32 @@
 {
-  "name": "libre-link-unofficial-api",
+  "name": "librelinkup-api-client",
   "module": "src/index.ts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "version": "1.0.0-alpha.7",
+  "version": "1.0.0",
   "description": "An unofficial API for Libre Link Up (glucose monitoring system/CGM)",
-  "author": "Mike Eling <mike.eling97@gmail.com>",
+  "author": "Mikel Granero <mikelgmh@gmail.com>",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "libre",
+    "librelinkup",
+    "glucose",
+    "cgm",
+    "diabetes",
+    "abbott",
+    "freestyle",
+    "typescript",
+    "nodejs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikelgmh/libre-link-unofficial-api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mikelgmh/libre-link-unofficial-api/issues"
+  },
+  "homepage": "https://github.com/mikelgmh/libre-link-unofficial-api#readme",
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "build": "bun run build:node && bun run build:emitDeclarations",
@@ -32,6 +51,14 @@
   },
   "files": [
     "dist/*.js",
-    "dist/*.d.ts"
-  ]
+    "dist/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
