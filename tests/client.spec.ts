@@ -1,5 +1,6 @@
 import { expect, test, afterEach, describe } from "bun:test";
-import { GlucoseReading, LibreLinkClient } from '../src';
+import { GlucoseReading } from '../src/reading';
+import { LibreLinkClient } from '../src/client';
 import { LibreLinkConnectionsMock, LibreLinkLoginMock, LibreLinkReadMock } from './mocks';
 import { mock, clearMocks } from 'bun-bagel';
 

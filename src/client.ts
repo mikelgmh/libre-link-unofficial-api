@@ -377,19 +377,22 @@ export class LibreLinkClient {
     // Check for common token expiration indicators
     const tokenErrorIndicators = [
       'token',
+      'jwt',
       'unauthorized',
       'authentication',
       'expired',
       'invalid token',
-      'access denied'
+      'access denied',
+      'malformed jwt',
+      'missing jwt'
     ];
 
     const messageContainsTokenError = tokenErrorIndicators.some(indicator =>
       errorMessage.toLowerCase().includes(indicator.toLowerCase())
     );
 
-    // HTTP 401 (Unauthorized) or 403 (Forbidden) often indicate token issues
-    const isAuthStatusCode = statusCode === 401 || statusCode === 403;
+    // HTTP 401 (Unauthorized), 403 (Forbidden), or 400 (Bad Request with JWT errors) often indicate token issues
+    const isAuthStatusCode = statusCode === 401 || statusCode === 403 || (statusCode === 400 && messageContainsTokenError);
 
     return messageContainsTokenError || isAuthStatusCode;
   }
@@ -410,6 +413,19 @@ export class LibreLinkClient {
    */
   public clearCache() {
     this.cache.clear();
+  }
+
+  /**
+   * @description Debug method to check if the client has a valid access token
+   * @returns Information about the current authentication state
+   */
+  public getAuthStatus() {
+    return {
+      hasToken: !!this.accessToken,
+      tokenLength: this.accessToken?.length || 0,
+      hasUser: !!this.me,
+      userId: this.me?.id || null
+    };
   }
 }
 

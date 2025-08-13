@@ -131,7 +131,44 @@ for await (const reading of stream) {
 
 Check out the [Sandbox](https://github.com/DRFR0ST/libre-link-unofficial-api/blob/main/sandbox/index.ts) directory for more samples.
 
+## 🧪 Running Tests
+
+This library includes both unit tests and integration tests.
+
+### Unit Tests
+
+```bash
+bun test tests/
+```
+
+### Integration Tests
+
+Integration tests require real LibreLink Up credentials. To run them:
+
+1. Copy the environment file template:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and add your LibreLink Up credentials:
+
+   ```env
+   LIBRELINK_EMAIL=your-email@example.com
+   LIBRELINK_PASSWORD=your-password
+   LIBRELINK_LLU_VERSION=4.12.0
+   ```
+
+3. Run the integration tests:
+
+   ```bash
+   bun test tests-int/
+   ```
+
+**⚠️ Important**: Never commit the `.env` file to version control. It contains sensitive credentials.
+
 ## ⚠️ Disclaimer
+
 This library was reverse engineered from the Libre Link Up API and resources available online; and may be incomplete or inaccurate. The library is not associated with Abbott or Freestyle. Use at your own risk.
 
 Every 12 hours a Github Action runs to test the library against the Libre Link Up API. If the tests fail, the library may be out of date. Please open an issue or submit a pull request if you notice any issues. Thanks!
@@ -139,7 +176,9 @@ Every 12 hours a Github Action runs to test the library against the Libre Link U
 [![🧪 Tests](https://github.com/DRFR0ST/libre-link-unofficial-api/actions/workflows/test.yml/badge.svg)](https://github.com/DRFR0ST/libre-link-unofficial-api/actions/workflows/test.yml)
 
 ## 🙏 Acknowledgements
+
 Big thanks to the author of the [libre-link-up-api-client](https://github.com/DiaKEM/libre-link-up-api-client) library for reverse engineering the Libre Link Up API — your work inspired this library! 🚀
 
 ## 📝 License
+
 This project is licensed under the terms of the MIT license. See the LICENSE file for details.

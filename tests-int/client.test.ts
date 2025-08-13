@@ -1,5 +1,5 @@
 import { expect, test, beforeEach, describe } from "bun:test";
-import { LibreLinkClient } from '../src';
+import { LibreLinkClient } from '../src/client';
 import { mapObjectPropertiesToTypes } from "./utils";
 
 describe('Libre Link Up API Integrity', () => {
