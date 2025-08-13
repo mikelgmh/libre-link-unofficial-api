@@ -3,7 +3,7 @@
   "module": "src/index.ts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An unofficial API for Libre Link Up (glucose monitoring system/CGM)",
   "author": "Mikel Granero <mikelgmh@gmail.com>",
   "type": "module",
