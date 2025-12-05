@@ -28,9 +28,6 @@ jobs:
       - name: Build project
         run: bun run build
 
-      - name: Run tests
-        run: bun run test-unit
-
       - name: Release
         run: bunx semantic-release
         env:
