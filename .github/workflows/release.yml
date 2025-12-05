@@ -12,6 +12,7 @@ jobs:
       LIBRE_LINK_EMAIL: ${{ secrets.LIBRE_LINK_EMAIL }}
       LIBRE_LINK_PASSWORD: ${{ secrets.LIBRE_LINK_PASSWORD }}
       LIBRE_LINK_PATIENT_ID: ${{ secrets.LIBRE_LINK_PATIENT_ID }}
+      LIBRE_LINK_UP_VERSION: ${{ secrets.LIBRE_LINK_UP_VERSION }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
