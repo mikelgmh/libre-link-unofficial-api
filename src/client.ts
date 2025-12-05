@@ -83,7 +83,9 @@ export class LibreLinkClient {
       this.accessToken = response.data.authTicket?.token;
 
       // Cache the user data for future use. Log in again to refresh the user data.
-      this.setCache("user", parseUser(response.data.user));
+      if (response.data.user) {
+        this.setCache("user", parseUser(response.data.user));
+      }
 
       return response as LibreLoginResponse;
     } catch (err) {
