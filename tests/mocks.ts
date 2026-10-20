@@ -1,4 +1,6 @@
 export const LibreLinkLoginMock = {
+    status: 0,
+    data: {
     user: {
         "id": "dummy_id",
         "firstName": "John",
@@ -32,10 +34,10 @@ export const LibreLinkLoginMock = {
             "secondaryMethod": "Email",
             "secondaryValue": "john.doe@example.com"
         },
-        "created": "2023-04-01T10:00:00.000Z",
-        "lastLogin": "2023-04-02T11:00:00.000Z",
+        "created": 1680352800,
+        "lastLogin": 1680444000,
         "programs": {},
-        "dateOfBirth": "1980-01-01T00:00:00.000Z",
+        "dateOfBirth": 315532800,
         "practices": {
             "dummy_practice_id": {
                 "id": "dummy_practice_id",
@@ -72,6 +74,16 @@ export const LibreLinkLoginMock = {
                 "history": []
             }
         }
+    },
+    "messages": { "unread": 0 },
+    "notifications": { "unresolved": 0 },
+    "authTicket": {
+        "token": "dummy_auth_token",
+        "expires": 1987654321,
+        "duration": 3600000
+    },
+    "invitations": [],
+    "trustedDeviceToken": ""
     }
 };
 

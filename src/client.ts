@@ -1,6 +1,21 @@
 import { GlucoseReading } from "./reading";
 import { LibreLinkUpEndpoints, LibreLoginResponse, LibreResponse, LibreRedirectResponse, LibreUser, LibreConnection, LibreConnectionResponse, LibreLogbookResponse, RawGlucoseReading } from "./types";
 import { encryptSha256, parseUser } from "./utils";
+import {
+  DEFAULT_API_URL,
+  DEFAULT_LLU_VERSION,
+  DEFAULT_PRODUCT,
+  apiUrlForRegion,
+  backoffDelay,
+  buildVersionLadder,
+  isRateLimited,
+  isTokenError,
+  isVersionBlockedError,
+  markVersionWorking,
+  resolveLluVersionAsync,
+  resolveLluVersionSync,
+  sleep,
+} from "./version-resolver";
 
 /**
  * A class for interacting with the Libre Link Up API.
@@ -10,8 +25,13 @@ export class LibreLinkClient {
   private accessToken: string | null = null;
   private patientId: string | null = null;
   private lluVersion: string;
+  private product: string;
   private credentials: { email: string; password: string };
   private options: LibreLinkClientOptions;
+  private autoUpdateVersion: boolean;
+  private versionUrl?: string;
+  /** User-pinned version (raw option, before defaults are merged). */
+  private explicitVersion?: string;
 
   // A cache for storing fetched data.
   private cache = new Map<string, any>();
@@ -26,12 +46,36 @@ export class LibreLinkClient {
       password: options.password
     };
 
-    this.apiUrl = options.apiUrl ?? DEFAULT_OPTIONS.apiUrl!;
+    // Region pin (e.g. "eu") beats a raw apiUrl; otherwise start at the
+    // global endpoint so Abbott redirects to the account's region on login.
+    this.apiUrl = options.apiUrl ?? apiUrlForRegion(options.region) ?? DEFAULT_API_URL;
     this.patientId = options.patientId ?? null;
-    this.lluVersion = options.lluVersion ?? DEFAULT_OPTIONS.lluVersion!;
+    this.explicitVersion = options.lluVersion;
+    // Explicit pin wins; otherwise the best version known to this process.
+    // The remote file is consulted asynchronously on login (never blocks construction).
+    this.lluVersion = options.lluVersion ?? resolveLluVersionSync();
+    this.product = options.product ?? DEFAULT_PRODUCT;
+    this.autoUpdateVersion = options.autoUpdateVersion !== false;
+    this.versionUrl = options.versionUrl;
 
     // Merge the options with the default options.
     this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
+
+  /** Currently emulated app version (may self-update after `login()`). */
+  public get resolvedVersion(): string {
+    return this.lluVersion;
+  }
+
+  /** Refresh the emulated version from the remote file. Never throws. */
+  public async resolveVersion(): Promise<string> {
+    // An explicit pin always wins — there is nothing to resolve.
+    if (this.explicitVersion) return this.lluVersion;
+    this.lluVersion = await resolveLluVersionAsync({
+      autoUpdate: this.autoUpdateVersion,
+      versionUrl: this.versionUrl,
+    });
+    return this.lluVersion;
   }
 
   /**
@@ -49,23 +93,39 @@ export class LibreLinkClient {
    * @description Log into the Libre Link Up API using the provided credentials.
    */
   public async login(): Promise<LibreLoginResponse> {
+    return this.performLogin();
+  }
+
+  private async performLogin(triedVersions: string[] = []): Promise<LibreLoginResponse> {
     const { email, password } = this.credentials;
 
     try {
+      // Consult the self-updating version file before authenticating, so a
+      // blocked client version is refreshed proactively instead of 403ing.
+      // Skipped mid-ladder: a retry already carries a chosen version.
+      if (triedVersions.length === 0) await this.resolveVersion();
+
       type LoginResponse = LibreLoginResponse | LibreRedirectResponse;
 
-      // Attempt to login to the Libre Link Up API.
+      // Login requests must never trigger the auto-login retry path
+      // (that would recurse); failures surface directly. Version retries
+      // propagate the already-tried list so the ladder always terminates.
       const response = await this._fetcher<LoginResponse>(LibreLinkUpEndpoints.Login, {
         method: "POST",
         body: JSON.stringify({
           email,
           password
         }),
-      });
+      }, { allowAutoLogin: false, allowVersionRetry: true, versionTried: triedVersions });
 
       // If the status is 2, means the credentials are invalid.
       if (response.status === 2)
         throw new Error("Invalid credentials. Please ensure that the email and password work with the LibreLinkUp app.");
+
+      // Status 4 means the account needs action in the app (terms/privacy).
+      // Re-logging in cannot fix that — fail fast with a clear message.
+      if (response.status === 4)
+        throw new Error("Account action required: please open the LibreLinkUp app and accept the Terms of Use / Privacy Policy, then try again.");
 
       if (!response.data)
         throw new Error("No data returned from Libre Link Up API.");
@@ -87,6 +147,7 @@ export class LibreLinkClient {
         this.setCache("user", parseUser(response.data.user));
       }
 
+      markVersionWorking(this.lluVersion);
       return response as LibreLoginResponse;
     } catch (err) {
       const error = err as Error;
@@ -176,6 +237,7 @@ export class LibreLinkClient {
 
       const response = await this._fetcher<LibreConnectionResponse>(`${LibreLinkUpEndpoints.Connections}/${patientId}/graph`, { headers });
 
+      markVersionWorking(this.lluVersion);
       return response;
     } catch (err) {
       const error = err as Error;
@@ -198,6 +260,7 @@ export class LibreLinkClient {
 
       const response = await this._fetcher<LibreLogbookResponse>(`${LibreLinkUpEndpoints.Connections}/${patientId}/logbook`, { headers });
 
+      markVersionWorking(this.lluVersion);
       return response;
     } catch (err) {
       const error = err as Error;
@@ -225,6 +288,7 @@ export class LibreLinkClient {
         // Cache the connections for future use.
         this.setCache("connections", connections);
 
+      markVersionWorking(this.lluVersion);
       return connections;
     } catch (err) {
       const error = err as Error;
@@ -243,14 +307,17 @@ export class LibreLinkClient {
     if (!connections.data?.length)
       throw new Error("No connections found. Please ensure that you have a connection with the LibreLinkUp app.");
 
-    // Get the patient ID from the connections, or fallback to the first connection.
-
+    // Prefer the pinned patient, otherwise fall back to the first connection.
     let patientId = connections.data[0].patientId;
 
-    if (this.patientId)
-      connections.data.find(
+    if (this.patientId) {
+      const match = connections.data.find(
         (connection: LibreConnection) => connection.patientId === this.patientId
-      )?.patientId;
+      );
+      if (!match)
+        throw new Error(`Patient ID not found in connections. (${this.patientId})`);
+      patientId = match.patientId;
+    }
 
     if (!patientId)
       throw new Error(`Patient ID not found in connections. (${this.patientId})`);
@@ -265,7 +332,7 @@ export class LibreLinkClient {
    */
   private async findRegion(region: string) {
     try {
-      const response = await this._fetcher(LibreLinkUpEndpoints.Country);
+      const response = await this._fetcher(LibreLinkUpEndpoints.Country, {}, { allowAutoLogin: false });
 
       // Find the region in the response.
       const lslApi = response.data?.regionalMap[region]?.lslApi;
@@ -285,15 +352,20 @@ export class LibreLinkClient {
    * @description A generic fetcher for the Libre Link Up API.
    * @param endpoint
    * @param options
-   * @param isRetry Internal flag to prevent infinite retry loops
+   * @param retry Policy flags for this call.
    */
-  private async _fetcher<T = LibreResponse>(endpoint: string, options: any = { headers: {} }, isRetry = false): Promise<T> {
+  private async _fetcher<T = LibreResponse>(
+    endpoint: string,
+    options: any = { headers: {} },
+    retry: { allowAutoLogin?: boolean; allowVersionRetry?: boolean; rateLimitAttempt?: number; versionTried?: string[] } = {}
+  ): Promise<T> {
+    const { allowAutoLogin = true, allowVersionRetry = true, rateLimitAttempt = 0, versionTried = [] } = retry;
     const headers = {
       ...options.headers,
       Authorization: this.accessToken ? `Bearer ${this.accessToken}` : "",
 
       // Libre Link Up API headers
-      product: 'llu.android',
+      product: this.product,
       version: this.lluVersion,
 
       'accept-encoding': 'gzip',
@@ -314,14 +386,31 @@ export class LibreLinkClient {
       );
 
       if (!response.ok) {
-        const errorPayload = await response.json();
-        const errorMessage = errorPayload?.message ?? JSON.stringify(errorPayload, null, 2)
+        const errorPayload = await response.json().catch(() => null);
+        // Keep the FULL body: a bare `.message` has hidden diagnoses before.
+        const bodyText = JSON.stringify(errorPayload);
+        const errorMessage =
+          typeof errorPayload?.message === "string" && errorPayload.message
+            ? `${errorPayload.message} — ${bodyText}`
+            : bodyText;
 
-        if (response.status === 429)
+        if (isRateLimited(response.status)) {
+          // Back off with jitter so fleets of boxes don't hammer in lockstep.
+          if (rateLimitAttempt < 2) {
+            const retryAfter = Number(response.headers?.get?.("retry-after"));
+            const wait = Number.isFinite(retryAfter) && retryAfter > 0
+              ? Math.min(retryAfter * 1000, 60_000)
+              : backoffDelay(rateLimitAttempt);
+            await sleep(wait);
+            return await this._fetcher<T>(endpoint, options, { ...retry, rateLimitAttempt: rateLimitAttempt + 1 });
+          }
           throw new Error(`Too many requests. Please wait before trying again. ${errorMessage}`);
+        }
 
-        // Check if the error is related to token expiration
-        if (!isRetry && this.isTokenExpiredError(response.status, errorMessage)) {
+        // Genuine token problem: clear it, log in once, retry once.
+        // NOTE: a bare 403 is NOT enough — Abbott also 403s blocked app
+        // versions, WAF hits and region mismatches (see below).
+        if (allowAutoLogin && isTokenError(response.status, errorMessage)) {
           try {
             // Clear the expired token and user cache
             this.accessToken = null;
@@ -330,10 +419,40 @@ export class LibreLinkClient {
             // Attempt to login again to refresh the token
             await this.login();
 
-            // Retry the original request with the new token
-            return await this._fetcher<T>(endpoint, options, true);
+            // Retry the original request with the new token (no further auto-login)
+            return await this._fetcher<T>(endpoint, options, { ...retry, allowAutoLogin: false });
           } catch (loginError) {
             throw new Error(`Token expired and automatic login failed: ${(loginError as Error).message}`);
+          }
+        }
+
+        // Blocked client version (or WAF/region block): walk the version
+        // ladder instead of pointlessly re-logging in.
+        // Skipped when the user pinned a version explicitly. Already-tried
+        // versions are skipped so the ladder always terminates.
+        if (allowVersionRetry && !this.explicitVersion && isVersionBlockedError(response.status, errorMessage)) {
+          const tried = [...versionTried, this.lluVersion];
+          const ladder = buildVersionLadder(this.explicitVersion);
+          const next = ladder.find((v) => !tried.includes(v));
+          if (next) {
+            const from = this.lluVersion;
+            try {
+              this.lluVersion = next;
+              this.accessToken = null;
+              this.cache.delete("user");
+              if (endpoint === LibreLinkUpEndpoints.Login) {
+                // We ARE the login request: retry it directly with the new version.
+                return await this._fetcher<T>(endpoint, options, { ...retry, allowVersionRetry: false, versionTried: tried });
+              }
+              await this.performLogin(tried);
+              return await this._fetcher<T>(endpoint, options, { ...retry, allowVersionRetry: false, allowAutoLogin: false });
+            } catch (ladderError) {
+              // Restore and report both attempts with their full bodies.
+              this.lluVersion = from;
+              throw new Error(
+                `LibreLinkUp rejected client version ${from} (status ${response.status}: ${errorMessage}); retry with ${next} also failed: ${(ladderError as Error).message}`
+              );
+            }
           }
         }
 
@@ -348,55 +467,13 @@ export class LibreLinkClient {
     } catch (err) {
       const error = err as Error;
 
-      // Check if this is a network error that might indicate token expiration
-      if (!isRetry && this.isTokenExpiredError(0, error.message)) {
-        try {
-          // Clear the expired token and user cache
-          this.accessToken = null;
-          this.cache.delete("user");
-
-          // Attempt to login again to refresh the token
-          await this.login();
-
-          // Retry the original request with the new token
-          return await this._fetcher<T>(endpoint, options, true);
-        } catch (loginError) {
-          throw new Error(`Token expired and automatic login failed: ${(loginError as Error).message}`);
-        }
+      // Our own classified errors already carry full context — pass through.
+      if (/^Error (fetching data|logging into Libre Link Up API|finding region)|Too many requests|Token expired|LibreLinkUp rejected client version/.test(error.message)) {
+        throw error;
       }
 
       throw new Error(`Error processing request to Libre Link Up API. ${error.message}`);
     }
-  }
-
-  /**
-   * @description Check if an error indicates that the authentication token has expired.
-   * @param statusCode The HTTP status code from the response
-   * @param errorMessage The error message from the response
-   * @returns True if the error indicates token expiration
-   */
-  private isTokenExpiredError(statusCode: number, errorMessage: string): boolean {
-    // Check for common token expiration indicators
-    const tokenErrorIndicators = [
-      'token',
-      'jwt',
-      'unauthorized',
-      'authentication',
-      'expired',
-      'invalid token',
-      'access denied',
-      'malformed jwt',
-      'missing jwt'
-    ];
-
-    const messageContainsTokenError = tokenErrorIndicators.some(indicator =>
-      errorMessage.toLowerCase().includes(indicator.toLowerCase())
-    );
-
-    // HTTP 401 (Unauthorized), 403 (Forbidden), or 400 (Bad Request with JWT errors) often indicate token issues
-    const isAuthStatusCode = statusCode === 401 || statusCode === 403 || (statusCode === 400 && messageContainsTokenError);
-
-    return messageContainsTokenError || isAuthStatusCode;
   }
 
   /**
@@ -426,7 +503,9 @@ export class LibreLinkClient {
       hasToken: !!this.accessToken,
       tokenLength: this.accessToken?.length || 0,
       hasUser: !!this.me,
-      userId: this.me?.id || null
+      userId: this.me?.id || null,
+      lluVersion: this.lluVersion,
+      apiUrl: this.apiUrl,
     };
   }
 }
@@ -435,13 +514,22 @@ export interface LibreLinkClientOptions {
   email: string;
   password: string;
   apiUrl?: string;
+  /** Region short-code (eu, us, …). Beats the default URL; ignored if `apiUrl` is set. */
+  region?: string;
   patientId?: string;
   cache?: boolean;
   lluVersion?: string;
+  /** Emulated product id. Default "llu.android". */
+  product?: string;
+  /** Consult the self-updating version file on login. Default true. */
+  autoUpdateVersion?: boolean;
+  /** Override the version-file URL (tests / mirrors). */
+  versionUrl?: string;
 }
 
 const DEFAULT_OPTIONS: Partial<LibreLinkClientOptions> = {
-  apiUrl: "https://api-us.libreview.io",
+  apiUrl: DEFAULT_API_URL,
   cache: true,
-  lluVersion: "4.7.0"
+  lluVersion: DEFAULT_LLU_VERSION,
+  product: DEFAULT_PRODUCT,
 };

@@ -1,0 +1,9 @@
+{
+  "$schema": "./schemas/llu-versions.schema.json",
+  "latest": "4.16.0",
+  "product": "llu.android",
+  "ladder": ["4.17.0", "4.16.0", "4.12.0", "4.7.0"],
+  "regions": ["global", "eu", "us", "de", "fr", "jp", "ap", "au", "ae", "ca"],
+  "updatedAt": "2026-10-20T00:00:00.000Z",
+  "source": "manual — kept fresh by .github/workflows/version-watch.yml"
+}
