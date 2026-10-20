@@ -50,7 +50,7 @@
     "semantic-release": "^23.0.0"
   },
   "peerDependencies": {
-    "typescript": "latest"
+    "typescript": ">=5.0.0 <7.0.0"
   },
   "files": [
     "dist/*.js",
