@@ -14,6 +14,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      issues: write
     env:
       LIBRE_LINK_EMAIL: ${{ secrets.LIBRE_LINK_EMAIL }}
       LIBRE_LINK_PASSWORD: ${{ secrets.LIBRE_LINK_PASSWORD }}
