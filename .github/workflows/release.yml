@@ -8,6 +8,12 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # OIDC trusted publishing (npmjs.com): id-token mints the short-lived
+    # token npm uses instead of NPM_TOKEN. contents:write pushes the
+    # release tag + creates the GitHub release.
+    permissions:
+      contents: write
+      id-token: write
     env:
       LIBRE_LINK_EMAIL: ${{ secrets.LIBRE_LINK_EMAIL }}
       LIBRE_LINK_PASSWORD: ${{ secrets.LIBRE_LINK_PASSWORD }}
@@ -25,11 +31,14 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Ensure npm supports OIDC trusted publishing (>=11.5.1)
+        run: npm install -g npm@latest
+
       - name: Build project
         run: bun run build
 
       - name: Release
+        # No NPM_TOKEN: auth happens via the OIDC trusted publisher above.
         run: bunx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
