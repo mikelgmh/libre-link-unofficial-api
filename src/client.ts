@@ -79,6 +79,22 @@ export class LibreLinkClient {
   }
 
   /**
+   * Force a fresh read of the remote version file, bypassing the TTL cache.
+   * Used when Abbott just blocked our fingerprint: the watchdog may have
+   * published a newer version minutes ago that this process hasn't seen.
+   * Never throws; falls back to the best version known to this process.
+   */
+  public async resolveVersionForce(): Promise<string> {
+    if (this.explicitVersion) return this.lluVersion;
+    this.lluVersion = await resolveLluVersionAsync({
+      autoUpdate: this.autoUpdateVersion,
+      versionUrl: this.versionUrl,
+      forceRefresh: true,
+    });
+    return this.lluVersion;
+  }
+
+  /**
    * @description Get the user data. Only available after logging in.
    */
   public get me(): LibreUser | null {
@@ -110,13 +126,16 @@ export class LibreLinkClient {
       // Login requests must never trigger the auto-login retry path
       // (that would recurse); failures surface directly. Version retries
       // propagate the already-tried list so the ladder always terminates.
+      // Mid-ladder logins (triedVersions non-empty) never start a nested
+      // walk — the outer walk owns the ladder and advances it one version
+      // per attempt, so login tries stay bounded by the ladder length.
       const response = await this._fetcher<LoginResponse>(LibreLinkUpEndpoints.Login, {
         method: "POST",
         body: JSON.stringify({
           email,
           password
         }),
-      }, { allowAutoLogin: false, allowVersionRetry: true, versionTried: triedVersions });
+      }, { allowAutoLogin: false, allowVersionRetry: triedVersions.length === 0, versionTried: triedVersions });
 
       // If the status is 2, means the credentials are invalid.
       if (response.status === 2)
@@ -426,16 +445,32 @@ export class LibreLinkClient {
           }
         }
 
-        // Blocked client version (or WAF/region block): walk the version
-        // ladder instead of pointlessly re-logging in.
+        // Blocked client version (or WAF/region block): walk the WHOLE
+        // version ladder instead of pointlessly re-logging in. The remote
+        // file is refreshed first (bypassing the TTL cache) so a version
+        // the watchdog published minutes ago is picked up immediately.
         // Skipped when the user pinned a version explicitly. Already-tried
         // versions are skipped so the ladder always terminates.
         if (allowVersionRetry && !this.explicitVersion && isVersionBlockedError(response.status, errorMessage)) {
-          const tried = [...versionTried, this.lluVersion];
+          const startVersion = this.lluVersion;
+          if (this.autoUpdateVersion) {
+            try {
+              await this.resolveVersionForce();
+            } catch {
+              // Fall through to the bundled ladder — never fatal.
+            }
+          }
+          const tried = [...versionTried, startVersion];
+          // Note: the force-refreshed version is deliberately NOT marked as
+          // tried — the ladder below picks it up first via remote-latest.
+          // If everything fails, keep the freshest known version, not the
+          // just-blocked one.
+          const keepVersion = this.lluVersion;
           const ladder = buildVersionLadder(this.explicitVersion);
-          const next = ladder.find((v) => !tried.includes(v));
-          if (next) {
-            const from = this.lluVersion;
+          let next = ladder.find((v) => !tried.includes(v));
+          let lastError: Error | null = null;
+          while (next) {
+            tried.push(next);
             try {
               this.lluVersion = next;
               this.accessToken = null;
@@ -447,13 +482,15 @@ export class LibreLinkClient {
               await this.performLogin(tried);
               return await this._fetcher<T>(endpoint, options, { ...retry, allowVersionRetry: false, allowAutoLogin: false });
             } catch (ladderError) {
-              // Restore and report both attempts with their full bodies.
-              this.lluVersion = from;
-              throw new Error(
-                `LibreLinkUp rejected client version ${from} (status ${response.status}: ${errorMessage}); retry with ${next} also failed: ${(ladderError as Error).message}`
-              );
+              lastError = ladderError as Error;
+              next = ladder.find((v) => !tried.includes(v));
             }
           }
+          // Exhausted: keep the freshest known version and report everything.
+          this.lluVersion = keepVersion;
+          throw new Error(
+            `LibreLinkUp rejected client version(s) ${tried.join(", ")} (status ${response.status}: ${errorMessage}); last attempt failed with: ${lastError?.message ?? "unknown error"}`
+          );
         }
 
         throw new Error(

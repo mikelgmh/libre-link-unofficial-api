@@ -1,8 +1,10 @@
 /**
  * Self-updating LibreLinkUp client fingerprint.
  *
- * Abbott periodically blocks old `llu.*` app versions (HTTP 403). This module
- * keeps the emulated version fresh without shipping a new library release:
+ * Abbott periodically blocks old `llu.*` app versions (HTTP 403, and since
+ * late 2025 also HTTP 400 `RequiredHeaderMissing` on `/llu/auth/login`).
+ * This module keeps the emulated version fresh without shipping a new
+ * library release:
  *
  *   explicit option > last version that worked in this process >
  *   remote `llu-versions.json` (cached, short timeout) > bundled default.
@@ -32,13 +34,15 @@ export interface ResolveLluVersionOptions {
   timeoutMs?: number;
   /** Fetch implementation (defaults to global fetch). */
   fetchImpl?: typeof fetch;
+  /** Ignore the TTL cache and refetch the remote file now. Default false. */
+  forceRefresh?: boolean;
 }
 
-export const DEFAULT_LLU_VERSION = "4.16.0";
+export const DEFAULT_LLU_VERSION = "4.19.0";
 export const DEFAULT_PRODUCT = "llu.android";
 /** Global endpoint — Abbott redirects to the account's region on login. */
 export const DEFAULT_API_URL = "https://api.libreview.io";
-export const BUNDLED_LADDER = ["4.17.0", "4.16.0", "4.12.0", "4.7.0"];
+export const BUNDLED_LADDER = ["4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.12.0", "4.7.0"];
 export const REMOTE_VERSION_URL =
   "https://raw.githubusercontent.com/mikelgmh/libre-link-unofficial-api/main/llu-versions.json";
 /** How long a fetched remote file is trusted before refetching. */
@@ -157,11 +161,16 @@ export async function resolveLluVersionAsync(
     versionUrl = REMOTE_VERSION_URL,
     timeoutMs = 3000,
     fetchImpl = fetch,
+    forceRefresh = false,
   } = opts;
   if (explicit && VERSION_RE.test(explicit)) return explicit;
-  if (lastWorkingVersion) return lastWorkingVersion;
+  if (lastWorkingVersion && !forceRefresh) return lastWorkingVersion;
   if (!autoUpdate) return resolveLluVersionSync(explicit);
-  if (remoteCache && Date.now() - remoteCache.fetchedAt < REMOTE_TTL_MS) {
+  if (
+    !forceRefresh &&
+    remoteCache &&
+    Date.now() - remoteCache.fetchedAt < REMOTE_TTL_MS
+  ) {
     return remoteCache.info.latest;
   }
   try {
@@ -218,6 +227,33 @@ function mentionsToken(message: string): boolean {
   return TOKEN_WORDS.some((w) => m.includes(w));
 }
 
+/**
+ * Body signatures Abbott returns when it rejects the client fingerprint
+ * (as opposed to the credentials/session). Observed in the wild:
+ * `RequiredHeaderMissing` (HTTP 400 on /llu/auth/login since ~2025),
+ * `minimumVersion` payloads, and plain version complaints.
+ */
+const FINGERPRINT_WORDS = [
+  "requiredheader",
+  "required header",
+  "minimumversion",
+  "minimum version",
+  "client version",
+  "app version",
+  "version not allowed",
+  "unsupported version",
+  "invalid version",
+  "outdated version",
+  "version too old",
+  "update required",
+  "upgrade required",
+];
+
+function mentionsFingerprint(message: string): boolean {
+  const m = (message ?? "").toLowerCase();
+  return FINGERPRINT_WORDS.some((w) => m.includes(w));
+}
+
 /** True when the response looks like an auth/token problem (re-login may help). */
 export function isTokenError(statusCode: number, message: string): boolean {
   if (statusCode === 401) return true;
@@ -234,10 +270,17 @@ export function isTokenError(statusCode: number, message: string): boolean {
  * problem — the classic signature of a blocked/outdated `version` header
  * (or WAF/region block). Retrying with a newer client version may help;
  * blindly re-logging in will not.
+ *
+ * Abbott answers fingerprint blocks with HTTP 403 (bare/blocked version)
+ * and — since ~2025 on `/llu/auth/login` — with HTTP 400
+ * `RequiredHeaderMissing`, so both are covered. Token wording always wins:
+ * a 400/403 that mentions tokens is a session problem, not a version one.
  */
 export function isVersionBlockedError(statusCode: number, message: string): boolean {
-  if (statusCode !== 403) return false;
-  return !mentionsToken(message);
+  if (mentionsToken(message)) return false;
+  if (statusCode === 403) return true;
+  if (statusCode === 400) return mentionsFingerprint(message);
+  return false;
 }
 
 /** Abbott rate limits: 429 standard, 430 observed in the wild. */

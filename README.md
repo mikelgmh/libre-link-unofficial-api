@@ -53,7 +53,7 @@ Option | Description | Default
 `password` | The password for your Libre Link Up account. **Required.** | `undefined`
 `apiUrl` | The base URL for the Libre Link Up API. | `"https://api.libreview.io"` (global entry point; Abbott redirects to your region on login)
 `patientId` | The patient ID for the user. | `undefined`
-`lluVersion` | The version of the Libre Link Up app to emulate. Pinned versions are never auto-changed. | `"4.16.0"`
+`lluVersion` | The version of the Libre Link Up app to emulate. Pinned versions are never auto-changed. | `"4.19.0"`
 `product` | The emulated product id (`llu.android` / `llu.ios`). | `"llu.android"`
 `region` | Region short-code (`eu`, `us`, …) for the entry URL. Ignored if `apiUrl` is set. | `undefined` (global)
 `autoUpdateVersion` | Consult the self-updating `llu-versions.json` on login, so blocked client versions refresh without a library release. | `true`
@@ -62,10 +62,10 @@ Option | Description | Default
 
 ### 🛡️ Anti-blocking (self-updating client fingerprint)
 
-Abbott periodically blocks old `llu.*` app versions with HTTP 403. The client defends in three layers:
+Abbott periodically blocks old `llu.*` app versions with HTTP 403 — and since ~2025 also with HTTP 400 `RequiredHeaderMissing` on `/llu/auth/login`. The client defends in three layers:
 
 1. **Runtime resolution** — effective version is `explicit option > last version that worked in this process > remote `llu-versions.json` (cached 6h, 3s timeout, never fatal) > bundled default`.
-2. **Ladder retry** — a bare 403 (no token wording) retries once with the next known-good version instead of pointlessly re-logging in. Only 401s and 403s that mention tokens trigger the re-login path.
+2. **Ladder retry** — a version-blocked response (bare 403, or 400 with fingerprint wording such as `RequiredHeaderMissing`) walks the whole known-good ladder: the remote file is force-refreshed first, then each untried version is attempted in turn. Only 401s and 400/403s that mention tokens trigger the re-login path. Pinned versions are never auto-changed.
 3. **CI watchdog** — `.github/workflows/version-watch.yml` probes the ladder daily against the real API and updates `llu-versions.json` when a newer version works. Data-only commit, no release needed.
 
 ### Methods
@@ -103,7 +103,7 @@ import { LibreLinkClient } from 'libre-link-unofficial-api';
 const client = new LibreLinkClient({ 
     email: 'your-libre-link-up-email', 
     password: 'your-libre-link-up-password',
-    lluVersion: '4.16.0', // Optional pin — pinned versions are never auto-changed
+    lluVersion: '4.19.0', // Optional pin — pinned versions are never auto-changed
     patientId: '2b2b2b2b-2b2b-2b2b-2b2b-2b2b2b2b2b2b' // Optional, allows selecting a specific patient
 });
 ```

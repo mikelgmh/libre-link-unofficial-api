@@ -44,6 +44,19 @@ describe("version-resolver", () => {
     expect(isVersionBlockedError(429, "x")).toBe(false);
   });
 
+  test("isVersionBlockedError: 400 fingerprint blocks are version blocks too", () => {
+    // The exact Abbott rejection seen in production (Oct 2025+).
+    expect(
+      isVersionBlockedError(400, '{"message":"RequiredHeaderMissing — {\\"message\\":\\"RequiredHeaderMissing\\"}"}')
+    ).toBe(true);
+    expect(isVersionBlockedError(400, "RequiredHeaderMissing")).toBe(true);
+    expect(isVersionBlockedError(400, "minimumVersion 4.17.0 required")).toBe(true);
+    // …but a 400 that smells like credentials/session still re-logs in.
+    expect(isVersionBlockedError(400, "bad request")).toBe(false);
+    expect(isVersionBlockedError(400, "Missing JWT")).toBe(false);
+    expect(isVersionBlockedError(400, "token expired")).toBe(false);
+  });
+
   test("isRateLimited covers 429 and 430", () => {
     expect(isRateLimited(429)).toBe(true);
     expect(isRateLimited(430)).toBe(true);
@@ -51,11 +64,11 @@ describe("version-resolver", () => {
   });
 
   test("resolveLluVersionSync prefers explicit, then last-working, then bundled", () => {
-    expect(resolveLluVersionSync()).toBe("4.16.0");
+    expect(resolveLluVersionSync()).toBe("4.19.0");
     expect(resolveLluVersionSync("9.9.9")).toBe("9.9.9");
-    expect(resolveLluVersionSync("bogus")).toBe("4.16.0");
-    markVersionWorking("4.17.0");
-    expect(resolveLluVersionSync()).toBe("4.17.0");
+    expect(resolveLluVersionSync("bogus")).toBe("4.19.0");
+    markVersionWorking("4.16.0");
+    expect(resolveLluVersionSync()).toBe("4.16.0");
     expect(resolveLluVersionSync("9.9.9")).toBe("9.9.9");
   });
 
@@ -80,15 +93,33 @@ describe("version-resolver", () => {
 
   test("resolveLluVersionAsync falls back silently when remote fails", async () => {
     const failing = (async () => new Response("nope", { status: 500 })) as typeof fetch;
-    expect(await resolveLluVersionAsync({ fetchImpl: failing })).toBe("4.16.0");
+    expect(await resolveLluVersionAsync({ fetchImpl: failing })).toBe("4.19.0");
     const hanging = (() => new Promise(() => {})) as unknown as typeof fetch;
-    expect(await resolveLluVersionAsync({ fetchImpl: hanging, timeoutMs: 20 })).toBe("4.16.0");
+    expect(await resolveLluVersionAsync({ fetchImpl: hanging, timeoutMs: 20 })).toBe("4.19.0");
   });
 
   test("resolveLluVersionAsync rejects malformed remote payloads", async () => {
     const bad = (async () =>
       new Response(JSON.stringify({ latest: "not-a-version" }), { status: 200 })) as typeof fetch;
-    expect(await resolveLluVersionAsync({ fetchImpl: bad })).toBe("4.16.0");
+    expect(await resolveLluVersionAsync({ fetchImpl: bad })).toBe("4.19.0");
+  });
+
+  test("resolveLluVersionAsync forceRefresh bypasses the TTL cache", async () => {
+    const v5 = (async () =>
+      new Response(
+        JSON.stringify({ latest: "5.0.0", product: "llu.android", ladder: ["5.0.0", "4.17.0"] }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )) as typeof fetch;
+    expect(await resolveLluVersionAsync({ fetchImpl: v5 })).toBe("5.0.0");
+    const v6 = (async () =>
+      new Response(
+        JSON.stringify({ latest: "6.0.0", product: "llu.android", ladder: ["6.0.0", "5.0.0"] }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )) as typeof fetch;
+    // Cached value wins without force…
+    expect(await resolveLluVersionAsync({ fetchImpl: v6 })).toBe("5.0.0");
+    // …but a version-block retry forces a fresh read.
+    expect(await resolveLluVersionAsync({ fetchImpl: v6, forceRefresh: true })).toBe("6.0.0");
   });
 
   test("buildVersionLadder dedups and orders explicit > working > bundled", () => {

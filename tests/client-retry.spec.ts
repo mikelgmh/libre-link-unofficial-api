@@ -1,6 +1,6 @@
 import { expect, test, afterEach, describe, beforeEach } from "bun:test";
 import { LibreLinkClient } from '../src/client';
-import { __resetVersionState } from "../src/version-resolver";
+import { __resetVersionState, markVersionWorking } from "../src/version-resolver";
 import { LibreLinkConnectionsMock, LibreLinkLoginMock } from './mocks';
 import { stubFetch, restoreFetch, fetchCalls } from './fetch-stub';
 
@@ -40,7 +40,7 @@ describe('LibreLinkClient anti-blocking', () => {
     expect(fetchCalls().filter((c) => c.url.includes('llu/auth/login')).length).toBe(1);
   });
 
-  test('bare 403 walks the version ladder once and reports both full bodies', async () => {
+  test('bare 403 walks the whole version ladder and reports every attempt', async () => {
     const blocked = { message: 'Forbidden', detail: 'client version not allowed' };
     stubFetch([
       { urlContains: 'llu/connections', responses: [{ status: 403, body: blocked }] },
@@ -55,12 +55,69 @@ describe('LibreLinkClient anti-blocking', () => {
     expect(err.message).toContain('403');
     expect(err.message).toContain('Forbidden');
     expect(err.message).toContain('client version not allowed');
+    expect(err.message).toContain('rejected client version(s)');
     // Bounded: ladder is finite, no infinite login loop.
     const logins = fetchCalls().filter((c) => c.url.includes('llu/auth/login')).length;
     expect(logins).toBeGreaterThan(0);
     expect(logins).toBeLessThanOrEqual(6);
-    // Failed ladder restores the starting version.
+    // Exhausted ladder keeps the freshest known version (the bundled default).
+    expect(client.resolvedVersion).toBe('4.19.0');
+  });
+
+  test('400 RequiredHeaderMissing on login walks the ladder and recovers on the next version', async () => {
+    // Simulate a process that learned the now-blocked 4.16.0 (e.g. from a
+    // stale remote file) — this is exactly the October 2025 production case.
+    markVersionWorking('4.16.0');
+    const rejected = { message: 'RequiredHeaderMissing — {"message":"RequiredHeaderMissing"}' };
+    stubFetch([
+      {
+        urlContains: 'llu/auth/login',
+        method: 'POST',
+        responses: (call: number) =>
+          call === 0
+            ? { status: 400, body: rejected }
+            : { status: 200, body: LibreLinkLoginMock },
+      },
+    ]);
+
+    const client = testClient();
     expect(client.resolvedVersion).toBe('4.16.0');
+    const res = await client.login();
+
+    expect(res.status).toBe(0);
+    // Recovery lands on the ladder's next untried version (bundled newest).
+    expect(client.resolvedVersion).toBe('4.19.0');
+    const logins = fetchCalls().filter((c) => c.url.includes('llu/auth/login'));
+    expect(logins.length).toBe(2);
+    expect(logins[0].version).toBe('4.16.0');
+    expect(logins[1].version).toBe('4.19.0');
+  });
+
+  test('400 RequiredHeaderMissing exhausting the ladder fails loudly, never loops', async () => {
+    markVersionWorking('4.16.0');
+    const rejected = { message: 'RequiredHeaderMissing' };
+    stubFetch([
+      { urlContains: 'llu/auth/login', method: 'POST', responses: [{ status: 400, body: rejected }] },
+    ]);
+
+    const client = testClient();
+    const err = await client.login().catch((e: Error) => e);
+
+    expect(err.message).toContain('rejected client version(s)');
+    expect(err.message).toContain('RequiredHeaderMissing');
+    expect(err.message).toContain('4.16.0');
+    expect(err.message).toContain('4.19.0');
+    const logins = fetchCalls().filter((c) => c.url.includes('llu/auth/login'));
+    // Bounded by the ladder: one login try per version, in ladder order —
+    // no nested walks, no repeats, no infinite loop.
+    expect(logins.map((c) => c.version)).toEqual([
+      '4.16.0',
+      '4.19.0',
+      '4.18.0',
+      '4.17.0',
+      '4.12.0',
+      '4.7.0',
+    ]);
   });
 
   test('pinned version is never auto-bumped on 403', async () => {
