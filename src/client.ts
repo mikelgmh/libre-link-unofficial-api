@@ -161,8 +161,12 @@ export class LibreLinkClient {
         try {
           return await this.login();
         } finally {
-          // Some clients, including the Flutter app, use the global entrypoint
-          // for connections/graph requests after the redirected login succeeds.
+          // Only revert to the pre-redirect URL when explicitly asked. The
+          // default (stay on the Abbott-assigned regional host) is required
+          // for fetch-based callers: fetch strips Authorization on the
+          // cross-origin redirect global→regional, so data calls made against
+          // the global entrypoint come back empty. (Dio preserves the header
+          // across redirects, which is why the Flutter app works on global.)
           if (this.keepApiUrlAfterRedirect) this.apiUrl = originalApiUrl;
         }
       }
@@ -584,7 +588,10 @@ export interface LibreLinkClientOptions {
   autoUpdateVersion?: boolean;
   /** Override the version-file URL (tests / mirrors). */
   versionUrl?: string;
-  /** Restore the original API URL after following a login region redirect. */
+  /** Restore the original API URL after following a login region redirect.
+   *  Discouraged for fetch-based callers: reverting to the global entrypoint
+   *  makes connections/graph return empty data (fetch drops Authorization on
+   *  the cross-origin redirect). Leave unset to stay on the regional host. */
   keepApiUrlAfterRedirect?: boolean;
 }
 
