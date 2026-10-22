@@ -30,6 +30,7 @@ export class LibreLinkClient {
   private options: LibreLinkClientOptions;
   private autoUpdateVersion: boolean;
   private versionUrl?: string;
+  private keepApiUrlAfterRedirect: boolean;
   /** User-pinned version (raw option, before defaults are merged). */
   private explicitVersion?: string;
 
@@ -57,6 +58,7 @@ export class LibreLinkClient {
     this.product = options.product ?? DEFAULT_PRODUCT;
     this.autoUpdateVersion = options.autoUpdateVersion !== false;
     this.versionUrl = options.versionUrl;
+    this.keepApiUrlAfterRedirect = options.keepApiUrlAfterRedirect === true;
 
     // Merge the options with the default options.
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -151,11 +153,18 @@ export class LibreLinkClient {
 
       // If the response contains a redirect, update the region and try again.
       if ("redirect" in response.data) {
+        const originalApiUrl = this.apiUrl;
         const regionUrl = await this.findRegion(response.data.region);
         // Update the API URL with the region url.
         this.apiUrl = regionUrl;
 
-        return await this.login();
+        try {
+          return await this.login();
+        } finally {
+          // Some clients, including the Flutter app, use the global entrypoint
+          // for connections/graph requests after the redirected login succeeds.
+          if (this.keepApiUrlAfterRedirect) this.apiUrl = originalApiUrl;
+        }
       }
 
       // Set the access token for future requests.
@@ -320,6 +329,11 @@ export class LibreLinkClient {
    * @description Get the patient ID from the connections.
    */
   private async getPatientId() {
+    // A configured or previously resolved patient ID is authoritative. This
+    // matches the Flutter flow, which resolves connections once after login
+    // and then reads the pinned patient directly on subsequent polls.
+    if (this.patientId) return this.patientId;
+
     const connections = await this.fetchConnections();
 
     // If there are no connections, throw an error.
@@ -341,6 +355,7 @@ export class LibreLinkClient {
     if (!patientId)
       throw new Error(`Patient ID not found in connections. (${this.patientId})`);
 
+    this.patientId = patientId;
     return patientId;
   }
 
@@ -379,9 +394,8 @@ export class LibreLinkClient {
     retry: { allowAutoLogin?: boolean; allowVersionRetry?: boolean; rateLimitAttempt?: number; versionTried?: string[] } = {}
   ): Promise<T> {
     const { allowAutoLogin = true, allowVersionRetry = true, rateLimitAttempt = 0, versionTried = [] } = retry;
-    const headers = {
+    const headers: Record<string, string> = {
       ...options.headers,
-      Authorization: this.accessToken ? `Bearer ${this.accessToken}` : "",
 
       // Libre Link Up API headers
       product: this.product,
@@ -392,6 +406,14 @@ export class LibreLinkClient {
       connection: 'Keep-Alive',
       'content-type': 'application/json',
     };
+    if (this.accessToken) {
+      headers.Authorization = `Bearer ${this.accessToken}`;
+    } else {
+      // Login requests omit Authorization in the Flutter client. An empty
+      // Authorization header is not equivalent and can be rejected upstream.
+      delete headers.Authorization;
+      delete headers.authorization;
+    }
 
     const requestOptions = Object.freeze({
       ...options,
@@ -562,6 +584,8 @@ export interface LibreLinkClientOptions {
   autoUpdateVersion?: boolean;
   /** Override the version-file URL (tests / mirrors). */
   versionUrl?: string;
+  /** Restore the original API URL after following a login region redirect. */
+  keepApiUrlAfterRedirect?: boolean;
 }
 
 const DEFAULT_OPTIONS: Partial<LibreLinkClientOptions> = {

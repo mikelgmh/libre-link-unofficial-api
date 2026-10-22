@@ -22,6 +22,7 @@ export interface FetchCall {
   /** LibreLinkUp client fingerprint sent with the request (if any). */
   version?: string;
   product?: string;
+  authorization?: string;
 }
 
 const originalFetch = globalThis.fetch;
@@ -33,7 +34,13 @@ export function stubFetch(routes: StubRoute[]): void {
     const url = typeof input === "string" ? input : String(input?.url ?? input);
     const method = (init?.method ?? "GET").toUpperCase();
     const headers = init?.headers as Record<string, string> | undefined;
-    calls.push({ url, method, version: headers?.["version"], product: headers?.["product"] });
+    calls.push({
+      url,
+      method,
+      version: headers?.["version"],
+      product: headers?.["product"],
+      authorization: headers?.Authorization ?? headers?.authorization,
+    });
     const route = routes.find(
       (r) => url.includes(r.urlContains) && (r.method ?? "GET").toUpperCase() === method
     );

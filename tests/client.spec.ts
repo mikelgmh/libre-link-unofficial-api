@@ -117,4 +117,42 @@ describe('LibreLinkClient', () => {
     expect(graphCalls.length).toBe(1);
     expect(graphCalls[0].url).toContain('second-patient');
   });
+
+  test('uses a configured patient ID without requesting the connections endpoint', async () => {
+    stubFetch([
+      { urlContains: 'llu/auth/login', method: 'POST', responses: [{ status: 200, body: LibreLinkLoginMock }] },
+      { urlContains: '/graph', responses: [{ status: 200, body: graphBody }] },
+      { urlContains: 'llu/connections', responses: [{ status: 200, body: LibreLinkConnectionsMock }] },
+    ]);
+
+    const client = new LibreLinkClient({
+      email: 'test@example.com',
+      password: 'testpassword',
+      patientId: 'pinned-patient',
+      autoUpdateVersion: false,
+    });
+    await client.login();
+    await client.history();
+
+    const calls = (await import('./fetch-stub')).fetchCalls();
+    expect(calls.filter((call) => call.url.endsWith('/llu/connections'))).toHaveLength(0);
+    expect(calls.find((call) => call.url.includes('/graph'))?.url).toContain('pinned-patient');
+  });
+
+  test('caches the resolved patient ID for later reads in the same client', async () => {
+    stubFetch([
+      { urlContains: 'llu/auth/login', method: 'POST', responses: [{ status: 200, body: LibreLinkLoginMock }] },
+      { urlContains: '/graph', responses: [{ status: 200, body: graphBody }] },
+      { urlContains: 'llu/connections', responses: [{ status: 200, body: LibreLinkConnectionsMock }] },
+    ]);
+
+    const client = new LibreLinkClient({ email: 'test@example.com', password: 'testpassword', autoUpdateVersion: false });
+    await client.login();
+    await client.history();
+    await client.history();
+
+    const calls = (await import('./fetch-stub')).fetchCalls();
+    expect(calls.filter((call) => call.url.endsWith('/llu/connections'))).toHaveLength(1);
+    expect((client as any).patientId).toBe(LibreLinkConnectionsMock.data[0].patientId);
+  });
 });

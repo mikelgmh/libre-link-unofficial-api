@@ -56,6 +56,7 @@ Option | Description | Default
 `lluVersion` | The version of the Libre Link Up app to emulate. Pinned versions are never auto-changed. | `"4.19.0"`
 `product` | The emulated product id (`llu.android` / `llu.ios`). | `"llu.android"`
 `region` | Region short-code (`eu`, `us`, …) for the entry URL. Ignored if `apiUrl` is set. | `undefined` (global)
+`keepApiUrlAfterRedirect` | Restore the configured base URL after following the regional login redirect. Useful for clients that keep using the global entrypoint, as the Flutter app does. | `false`
 `autoUpdateVersion` | Consult the self-updating `llu-versions.json` on login, so blocked client versions refresh without a library release. | `true`
 `versionUrl` | Override the version-file URL (mirrors / tests). | built-in GitHub raw URL
 `cache` | Whether to enable cache for request responses received from Libre Link Up api. Data like blood glucose readings will never be cached. | `true`

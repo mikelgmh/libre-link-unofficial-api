@@ -40,6 +40,43 @@ describe('LibreLinkClient anti-blocking', () => {
     expect(fetchCalls().filter((c) => c.url.includes('llu/auth/login')).length).toBe(1);
   });
 
+  test('fresh login omits the empty Authorization header', async () => {
+    stubFetch([
+      { urlContains: 'llu/auth/login', method: 'POST', responses: [{ status: 200, body: LibreLinkLoginMock }] },
+    ]);
+
+    await testClient({ lluVersion: '4.17.0', product: 'llu.ios' }).login();
+
+    const loginCall = fetchCalls().find((call) => call.url.includes('llu/auth/login'));
+    expect(loginCall?.authorization).toBeUndefined();
+  });
+
+  test('can return to the global API base after following a login region redirect', async () => {
+    const globalApi = 'https://api.libreview.io';
+    stubFetch([
+      {
+        urlContains: 'llu/auth/login',
+        method: 'POST',
+        responses: (call: number) => call === 0
+          ? { status: 200, body: { status: 0, data: { redirect: true, region: 'EU' } } }
+          : { status: 200, body: LibreLinkLoginMock },
+      },
+      {
+        urlContains: 'llu/config/country',
+        responses: [{ status: 200, body: { status: 0, data: { regionalMap: { EU: { lslApi: 'https://api-eu.libreview.io' } } } } }],
+      },
+      { urlContains: 'llu/connections', responses: [{ status: 200, body: LibreLinkConnectionsMock }] },
+    ]);
+
+    const client = testClient({ apiUrl: globalApi, keepApiUrlAfterRedirect: true });
+    await client.login();
+    await client.fetchConnections();
+
+    expect(client.getAuthStatus().apiUrl).toBe(globalApi);
+    const connectionsCall = fetchCalls().find((call) => call.url.includes('llu/connections'));
+    expect(connectionsCall?.url).toContain(globalApi);
+  });
+
   test('bare 403 walks the whole version ladder and reports every attempt', async () => {
     const blocked = { message: 'Forbidden', detail: 'client version not allowed' };
     stubFetch([
