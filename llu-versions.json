@@ -1,16 +1,16 @@
 {
   "$schema": "./schemas/llu-versions.schema.json",
-  "latest": "4.64.0",
+  "latest": "4.67.0",
   "product": "llu.android",
   "ladder": [
+    "4.67.0",
+    "4.66.0",
+    "4.65.0",
     "4.64.0",
     "4.63.0",
     "4.62.0",
     "4.61.0",
-    "4.60.0",
-    "4.59.0",
-    "4.58.0",
-    "4.57.0"
+    "4.60.0"
   ],
   "regions": [
     "global",
@@ -24,6 +24,6 @@
     "ae",
     "ca"
   ],
-  "updatedAt": "2026-11-06T11:15:02.601Z",
+  "updatedAt": "2026-11-07T10:30:49.966Z",
   "source": "version-watch.yml"
 }
